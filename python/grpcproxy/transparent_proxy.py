@@ -85,25 +85,31 @@ class FullTransparentProxyHandler(grpc.GenericRpcHandler):
 
     def _make_stream_stream(self, method: str):
         async def handler(request_iterator, context):
-            call = self._channel.stream_stream(
-                method,
-                request_serializer=_identity,
-                response_deserializer=_identity,
-            )
-            stream = call()
+            try:
+                call = self._channel.stream_stream(
+                    method,
+                    request_serializer=_identity,
+                    response_deserializer=_identity,
+                )
+                stream = call()
 
-            # Forward all requests from client to backend
-            async def forward_requests():
-                async for req_bytes in request_iterator:
-                    await stream.write(req_bytes)
-                await stream.done_writing()
+                # Forward all requests from client to backend
+                async def forward_requests():
+                    try:
+                        async for req_bytes in request_iterator:
+                            await stream.write(req_bytes)
+                        await stream.done_writing()
+                    except grpc.aio.AioRpcError:
+                        pass  # Error will be surfaced when reading responses
 
-            forward_task = asyncio.ensure_future(forward_requests())
+                forward_task = asyncio.ensure_future(forward_requests())
 
-            # Relay all responses from backend to client
-            async for resp_bytes in stream:
-                yield resp_bytes
+                # Relay all responses from backend to client
+                async for resp_bytes in stream:
+                    yield resp_bytes
 
-            await forward_task
+                await forward_task
+            except grpc.aio.AioRpcError as e:
+                await context.abort(e.code(), e.details())
 
         return handler

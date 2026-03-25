@@ -9,7 +9,9 @@ import (
 	"github.com/tordynnar/grpcproxy/pb"
 	"github.com/tordynnar/grpcproxy/proxy"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type testEnv struct {
@@ -234,22 +236,27 @@ func TestAdd_BackendDown(t *testing.T) {
 	if err == nil {
 		t.Fatal("Add should fail when backend is down")
 	}
-	t.Logf("expected error: %v", err)
+	if got := status.Code(err); got != codes.Unavailable {
+		t.Errorf("code = %v, want %v", got, codes.Unavailable)
+	}
 }
 
 func TestFibonacci_BackendDown(t *testing.T) {
 	env := setupNoBackend(t)
 	stream, err := env.mathClient.Fibonacci(context.Background(), &pb.FibRequest{Count: 7})
 	if err != nil {
-		// Error may come at stream creation or first Recv
-		t.Logf("expected error at call: %v", err)
+		if got := status.Code(err); got != codes.Unavailable {
+			t.Errorf("code = %v, want %v", got, codes.Unavailable)
+		}
 		return
 	}
 	_, err = stream.Recv()
 	if err == nil || err == io.EOF {
 		t.Fatal("Fibonacci Recv should fail when backend is down")
 	}
-	t.Logf("expected error: %v", err)
+	if got := status.Code(err); got != codes.Unavailable {
+		t.Errorf("code = %v, want %v", got, codes.Unavailable)
+	}
 }
 
 func itoa(n int) string {

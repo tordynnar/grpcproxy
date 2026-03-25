@@ -343,26 +343,28 @@ async fn test_unary_echo_backend_down() {
 #[tokio::test]
 async fn test_add_backend_down() {
     let mut env = setup_backend_down().await;
-    // Forwarded call should fail
-    let result = env.math.add(AddRequest { a: 2, b: 3 }).await;
-    assert!(result.is_err(), "Add should fail when backend is down");
+    let err = env
+        .math
+        .add(AddRequest { a: 2, b: 3 })
+        .await
+        .expect_err("Add should fail when backend is down");
+    assert_eq!(err.code(), tonic::Code::Unavailable);
 }
 
 #[tokio::test]
 async fn test_fibonacci_backend_down() {
     let mut env = setup_backend_down().await;
-    // Forwarded streaming call should fail at call or first recv
     let result = env.math.fibonacci(FibRequest { count: 7 }).await;
     match result {
-        Err(_) => {} // error at call time
+        Err(e) => assert_eq!(e.code(), tonic::Code::Unavailable),
         Ok(resp) => {
             let mut stream = resp.into_inner();
-            let recv = stream.next().await;
-            match recv {
-                None => panic!("expected error, got empty stream"),
-                Some(Ok(_)) => panic!("expected error, got successful response"),
-                Some(Err(_)) => {} // error at recv time
-            }
+            let err = stream
+                .next()
+                .await
+                .expect("should have a result")
+                .expect_err("should be an error");
+            assert_eq!(err.code(), tonic::Code::Unavailable);
         }
     }
 }

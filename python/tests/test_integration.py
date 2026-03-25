@@ -234,16 +234,18 @@ async def test_unary_echo_backend_down(backend_down_env):
 
 @pytest.mark.asyncio
 async def test_add_backend_down(backend_down_env):
-    """Forwarded calls should fail when backend is down."""
+    """Forwarded calls should fail with UNAVAILABLE when backend is down."""
     _, math_client = backend_down_env
-    with pytest.raises(grpc.aio.AioRpcError):
+    with pytest.raises(grpc.aio.AioRpcError) as exc_info:
         await math_client.Add(math_pb2.AddRequest(a=2, b=3))
+    assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
 
 
 @pytest.mark.asyncio
 async def test_fibonacci_backend_down(backend_down_env):
-    """Forwarded streaming calls should fail when backend is down."""
+    """Forwarded streaming calls should fail with UNAVAILABLE when backend is down."""
     _, math_client = backend_down_env
-    with pytest.raises(grpc.aio.AioRpcError):
+    with pytest.raises(grpc.aio.AioRpcError) as exc_info:
         async for _ in math_client.Fibonacci(math_pb2.FibRequest(count=7)):
             pass
+    assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE

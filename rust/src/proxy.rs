@@ -84,6 +84,15 @@ impl EchoService for InterceptedEchoService {
 
 type BoxBody = http_body_util::combinators::UnsyncBoxBody<bytes::Bytes, Status>;
 
+fn error_to_status(e: Box<dyn std::error::Error + Send + Sync>) -> Status {
+    // tonic transport errors (connection refused, etc.) should be UNAVAILABLE,
+    // matching Go's grpc-proxy behavior.
+    if e.downcast_ref::<tonic::transport::Error>().is_some() {
+        return Status::unavailable(e.to_string());
+    }
+    Status::internal(e.to_string())
+}
+
 fn status_to_response(status: Status) -> http::Response<BoxBody> {
     let (parts, body) = status.into_http().into_parts();
     let body = body
@@ -181,7 +190,7 @@ async fn serve_connection(
                 } else {
                     match proxy.call(req).await {
                         Ok(resp) => resp,
-                        Err(e) => status_to_response(Status::internal(e.to_string())),
+                        Err(e) => status_to_response(error_to_status(e)),
                     }
                 };
 
@@ -213,7 +222,7 @@ async fn serve_passthrough_connection(
 
                 let resp = match proxy.call(req).await {
                     Ok(resp) => resp,
-                    Err(e) => status_to_response(Status::internal(e.to_string())),
+                    Err(e) => status_to_response(error_to_status(e)),
                 };
 
                 Ok::<_, Infallible>(resp)
