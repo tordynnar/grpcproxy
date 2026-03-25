@@ -190,6 +190,68 @@ func TestFibonacci_Forwarded(t *testing.T) {
 	}
 }
 
+// --- Backend down: intercepted calls still work, forwarded calls fail ---
+
+func setupNoBackend(t *testing.T) *testEnv {
+	t.Helper()
+
+	// Point the proxy at a port where nothing is listening.
+	proxySrv, proxyLis, err := proxy.StartProxy("localhost:0", "localhost:1")
+	if err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(proxySrv.GracefulStop)
+
+	conn, err := grpc.NewClient(proxyLis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	return &testEnv{
+		echoClient: pb.NewEchoServiceClient(conn),
+		mathClient: pb.NewMathServiceClient(conn),
+	}
+}
+
+func TestUnaryEcho_BackendDown(t *testing.T) {
+	env := setupNoBackend(t)
+	resp, err := env.echoClient.UnaryEcho(context.Background(), &pb.EchoRequest{Message: "hello"})
+	if err != nil {
+		t.Fatalf("UnaryEcho should succeed (intercepted): %v", err)
+	}
+	if resp.Source != "proxy" {
+		t.Errorf("source = %q, want %q", resp.Source, "proxy")
+	}
+	if resp.Message != "HELLO" {
+		t.Errorf("message = %q, want %q", resp.Message, "HELLO")
+	}
+}
+
+func TestAdd_BackendDown(t *testing.T) {
+	env := setupNoBackend(t)
+	_, err := env.mathClient.Add(context.Background(), &pb.AddRequest{A: 2, B: 3})
+	if err == nil {
+		t.Fatal("Add should fail when backend is down")
+	}
+	t.Logf("expected error: %v", err)
+}
+
+func TestFibonacci_BackendDown(t *testing.T) {
+	env := setupNoBackend(t)
+	stream, err := env.mathClient.Fibonacci(context.Background(), &pb.FibRequest{Count: 7})
+	if err != nil {
+		// Error may come at stream creation or first Recv
+		t.Logf("expected error at call: %v", err)
+		return
+	}
+	_, err = stream.Recv()
+	if err == nil || err == io.EOF {
+		t.Fatal("Fibonacci Recv should fail when backend is down")
+	}
+	t.Logf("expected error: %v", err)
+}
+
 func itoa(n int) string {
 	return string(rune('0' + n))
 }

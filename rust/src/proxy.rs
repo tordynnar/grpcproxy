@@ -125,6 +125,38 @@ pub async fn start_proxy(
     Ok((local_addr, tx))
 }
 
+/// Starts a passthrough proxy that forwards ALL services transparently (no interception).
+/// Used for testing that the transparent proxy handles all streaming types.
+pub async fn start_passthrough_proxy(
+    listen_addr: SocketAddr,
+    backend_addr: &str,
+) -> Result<(SocketAddr, oneshot::Sender<()>), Box<dyn std::error::Error>> {
+    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
+    let local_addr = listener.local_addr()?;
+
+    let transparent = TransparentProxy::new_lazy(backend_addr);
+
+    let (tx, mut rx) = oneshot::channel::<()>();
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = match result {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let proxy = transparent.clone();
+                    tokio::spawn(serve_passthrough_connection(stream, proxy));
+                }
+                _ = &mut rx => break,
+            }
+        }
+    });
+
+    Ok((local_addr, tx))
+}
+
 async fn serve_connection(
     stream: tokio::net::TcpStream,
     echo: EchoServiceServer<InterceptedEchoService>,
@@ -151,6 +183,37 @@ async fn serve_connection(
                         Ok(resp) => resp,
                         Err(e) => status_to_response(Status::internal(e.to_string())),
                     }
+                };
+
+                Ok::<_, Infallible>(resp)
+            }
+        },
+    );
+
+    hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+        .http2_only()
+        .serve_connection(TokioIo::new(stream), svc)
+        .await
+        .ok();
+}
+
+async fn serve_passthrough_connection(
+    stream: tokio::net::TcpStream,
+    proxy: TransparentProxy,
+) {
+    let svc = hyper::service::service_fn(
+        move |req: http::Request<hyper::body::Incoming>| {
+            let mut proxy = proxy.clone();
+            async move {
+                let (parts, body) = req.into_parts();
+                let body = body
+                    .map_err(|e| Status::internal(e.to_string()))
+                    .boxed_unsync();
+                let req = http::Request::from_parts(parts, body);
+
+                let resp = match proxy.call(req).await {
+                    Ok(resp) => resp,
+                    Err(e) => status_to_response(Status::internal(e.to_string())),
                 };
 
                 Ok::<_, Infallible>(resp)

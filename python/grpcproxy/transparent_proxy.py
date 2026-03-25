@@ -63,24 +63,20 @@ class TransparentProxyStreamHandler(grpc.GenericRpcHandler):
 
 
 class FullTransparentProxyHandler(grpc.GenericRpcHandler):
-    """Transparent proxy that sniffs the method type and forwards accordingly.
+    """Transparent proxy that forwards any unknown RPC method to the backend.
 
-    Since we don't know the streaming type of unknown methods at dispatch time,
-    we try unary-unary first. If the service uses streaming, we need a different
-    approach. For this project, MathService has only unary and server-streaming,
-    so we handle both.
+    Uses stream_stream as a universal handler for all RPC types (unary,
+    server-streaming, client-streaming, bidi). This works because at the
+    gRPC wire protocol level there is no distinction — unary is just a
+    stream of one message. grpcio adapts accordingly.
     """
 
     def __init__(self, channel: grpc.aio.Channel):
         self._channel = channel
-        self._known_server_streaming = set()
 
     def service(self, handler_call_details):
         method = handler_call_details.method
 
-        # Use stream-stream as the universal handler — it works for all RPC types.
-        # grpcio will adapt: unary requests come as a single-item iterator,
-        # unary responses are a single-item stream.
         return grpc.stream_stream_rpc_method_handler(
             self._make_stream_stream(method),
             request_deserializer=_identity,
