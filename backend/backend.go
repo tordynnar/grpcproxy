@@ -9,6 +9,8 @@ import (
 
 	"github.com/tordynnar/grpcproxy/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type echoServer struct {
@@ -71,6 +73,9 @@ type mathServer struct {
 }
 
 func (s *mathServer) Add(_ context.Context, req *pb.AddRequest) (*pb.AddResponse, error) {
+	if req.A == 0 && req.B == 0 {
+		return nil, status.Error(codes.InvalidArgument, "both operands are zero")
+	}
 	return &pb.AddResponse{Result: req.A + req.B, Source: "backend"}, nil
 }
 

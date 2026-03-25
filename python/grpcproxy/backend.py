@@ -28,6 +28,8 @@ class EchoServiceServicer(echo_pb2_grpc.EchoServiceServicer):
 
 class MathServiceServicer(math_pb2_grpc.MathServiceServicer):
     async def Add(self, request, context):
+        if request.a == 0 and request.b == 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "both operands are zero")
         return math_pb2.AddResponse(result=request.a + request.b, source="backend")
 
     async def Fibonacci(self, request, context):

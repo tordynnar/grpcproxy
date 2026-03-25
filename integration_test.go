@@ -259,6 +259,26 @@ func TestFibonacci_BackendDown(t *testing.T) {
 	}
 }
 
+// --- Backend error propagation: forwarded errors preserve code and message ---
+
+func TestAdd_BackendError(t *testing.T) {
+	env := setup(t)
+	_, err := env.mathClient.Add(context.Background(), &pb.AddRequest{A: 0, B: 0})
+	if err == nil {
+		t.Fatal("Add(0,0) should fail")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("code = %v, want %v", st.Code(), codes.InvalidArgument)
+	}
+	if st.Message() != "both operands are zero" {
+		t.Errorf("message = %q, want %q", st.Message(), "both operands are zero")
+	}
+}
+
 func itoa(n int) string {
 	return string(rune('0' + n))
 }

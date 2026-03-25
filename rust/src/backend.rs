@@ -83,6 +83,9 @@ pub struct MathServiceImpl;
 impl MathService for MathServiceImpl {
     async fn add(&self, req: Request<AddRequest>) -> Result<Response<AddResponse>, Status> {
         let inner = req.into_inner();
+        if inner.a == 0 && inner.b == 0 {
+            return Err(Status::invalid_argument("both operands are zero"));
+        }
         Ok(Response::new(AddResponse {
             result: inner.a + inner.b,
             source: "backend".into(),

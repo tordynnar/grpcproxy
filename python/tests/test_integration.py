@@ -249,3 +249,16 @@ async def test_fibonacci_backend_down(backend_down_env):
         async for _ in math_client.Fibonacci(math_pb2.FibRequest(count=7)):
             pass
     assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
+
+
+# --- Backend error propagation: forwarded errors preserve code and message ---
+
+
+@pytest.mark.asyncio
+async def test_add_backend_error(env):
+    """Backend errors should propagate with exact code and message through the proxy."""
+    _, math_client = env
+    with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+        await math_client.Add(math_pb2.AddRequest(a=0, b=0))
+    assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert exc_info.value.details() == "both operands are zero"

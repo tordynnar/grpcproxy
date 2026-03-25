@@ -368,3 +368,17 @@ async fn test_fibonacci_backend_down() {
         }
     }
 }
+
+// --- Backend error propagation: forwarded errors preserve code and message ---
+
+#[tokio::test]
+async fn test_add_backend_error() {
+    let mut env = setup().await;
+    let err = env
+        .math
+        .add(AddRequest { a: 0, b: 0 })
+        .await
+        .expect_err("Add(0,0) should fail");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert_eq!(err.message(), "both operands are zero");
+}
