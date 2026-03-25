@@ -382,3 +382,34 @@ async fn test_add_backend_error() {
     assert_eq!(err.code(), tonic::Code::InvalidArgument);
     assert_eq!(err.message(), "both operands are zero");
 }
+
+// --- Metadata propagation: headers pass through the transparent proxy ---
+
+#[tokio::test]
+async fn test_add_metadata_propagation() {
+    let mut env = setup().await;
+
+    let mut req = tonic::Request::new(AddRequest { a: 1, b: 2 });
+    req.metadata_mut()
+        .insert("x-test-id", "abc-123".parse().unwrap());
+
+    let resp = env.math.add(req).await.expect("Add with metadata");
+
+    // Verify response header: backend always sets x-backend-version
+    let version = resp
+        .metadata()
+        .get("x-backend-version")
+        .expect("x-backend-version missing from response metadata")
+        .to_str()
+        .unwrap();
+    assert_eq!(version, "v1");
+
+    // Verify request header was received: backend echoes x-test-id back
+    let test_id = resp
+        .metadata()
+        .get("x-test-id")
+        .expect("x-test-id missing from response metadata")
+        .to_str()
+        .unwrap();
+    assert_eq!(test_id, "abc-123");
+}

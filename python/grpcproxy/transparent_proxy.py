@@ -31,12 +31,15 @@ class FullTransparentProxyHandler(grpc.GenericRpcHandler):
     def _make_stream_stream(self, method: str):
         async def handler(request_iterator, context):
             try:
+                # Forward incoming request metadata to the backend.
+                incoming_metadata = context.invocation_metadata()
+
                 call = self._channel.stream_stream(
                     method,
                     request_serializer=_identity,
                     response_deserializer=_identity,
                 )
-                stream = call()
+                stream = call(metadata=incoming_metadata)
 
                 # Forward all requests from client to backend
                 async def forward_requests():
@@ -49,9 +52,19 @@ class FullTransparentProxyHandler(grpc.GenericRpcHandler):
 
                 forward_task = asyncio.create_task(forward_requests())
 
+                # Relay response initial metadata back to the client.
+                initial_metadata = await stream.initial_metadata()
+                if initial_metadata:
+                    await context.send_initial_metadata(initial_metadata)
+
                 # Relay all responses from backend to client
                 async for resp_bytes in stream:
                     yield resp_bytes
+
+                # Relay trailing metadata back to the client.
+                trailing_metadata = await stream.trailing_metadata()
+                if trailing_metadata:
+                    context.set_trailing_metadata(trailing_metadata)
 
                 await forward_task
             except grpc.aio.AioRpcError as e:

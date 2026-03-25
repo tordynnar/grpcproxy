@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -276,6 +277,34 @@ func TestAdd_BackendError(t *testing.T) {
 	}
 	if st.Message() != "both operands are zero" {
 		t.Errorf("message = %q, want %q", st.Message(), "both operands are zero")
+	}
+}
+
+// --- Metadata propagation: headers pass through the transparent proxy ---
+
+func TestAdd_MetadataPropagation(t *testing.T) {
+	env := setup(t)
+
+	// Send request with custom metadata
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-test-id", "abc-123")
+	var header, trailer metadata.MD
+	resp, err := env.mathClient.Add(ctx, &pb.AddRequest{A: 1, B: 2},
+		grpc.Header(&header), grpc.Trailer(&trailer))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if resp.Result != 3 {
+		t.Errorf("result = %d, want 3", resp.Result)
+	}
+
+	// Verify response header: backend always sets x-backend-version
+	if vals := header.Get("x-backend-version"); len(vals) == 0 || vals[0] != "v1" {
+		t.Errorf("header x-backend-version = %v, want [v1]", vals)
+	}
+
+	// Verify request header was received: backend echoes x-test-id back as trailer
+	if vals := trailer.Get("x-test-id"); len(vals) == 0 || vals[0] != "abc-123" {
+		t.Errorf("trailer x-test-id = %v, want [abc-123]", vals)
 	}
 }
 

@@ -262,3 +262,23 @@ async def test_add_backend_error(env):
         await math_client.Add(math_pb2.AddRequest(a=0, b=0))
     assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
     assert exc_info.value.details() == "both operands are zero"
+
+
+# --- Metadata propagation: headers pass through the transparent proxy ---
+
+
+@pytest.mark.asyncio
+async def test_add_metadata_propagation(env):
+    """Custom metadata should pass through the transparent proxy and back."""
+    _, math_client = env
+    request_metadata = (("x-test-id", "abc-123"),)
+    call = math_client.Add(math_pb2.AddRequest(a=1, b=2), metadata=request_metadata)
+    resp = await call
+    assert resp.result == 3
+
+    # Verify response header: backend always sets x-backend-version
+    initial_metadata = await call.initial_metadata()
+    assert initial_metadata["x-backend-version"] == "v1"
+
+    # Verify request header was received: backend echoes x-test-id back
+    assert initial_metadata["x-test-id"] == "abc-123"

@@ -10,6 +10,7 @@ import (
 	"github.com/tordynnar/grpcproxy/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -72,9 +73,17 @@ type mathServer struct {
 	pb.UnimplementedMathServiceServer
 }
 
-func (s *mathServer) Add(_ context.Context, req *pb.AddRequest) (*pb.AddResponse, error) {
+func (s *mathServer) Add(ctx context.Context, req *pb.AddRequest) (*pb.AddResponse, error) {
 	if req.A == 0 && req.B == 0 {
 		return nil, status.Error(codes.InvalidArgument, "both operands are zero")
+	}
+	// Echo x-test-id request header back as trailing metadata,
+	// and always set x-backend-version as initial metadata.
+	grpc.SendHeader(ctx, metadata.Pairs("x-backend-version", "v1"))
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get("x-test-id"); len(vals) > 0 {
+			grpc.SetTrailer(ctx, metadata.Pairs("x-test-id", vals[0]))
+		}
 	}
 	return &pb.AddResponse{Result: req.A + req.B, Source: "backend"}, nil
 }

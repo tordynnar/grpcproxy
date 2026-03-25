@@ -82,14 +82,28 @@ pub struct MathServiceImpl;
 #[tonic::async_trait]
 impl MathService for MathServiceImpl {
     async fn add(&self, req: Request<AddRequest>) -> Result<Response<AddResponse>, Status> {
+        // Echo x-test-id request header back as response metadata.
+        let test_id = req
+            .metadata()
+            .get("x-test-id")
+            .map(|v| v.to_str().unwrap_or("").to_string());
+
         let inner = req.into_inner();
         if inner.a == 0 && inner.b == 0 {
             return Err(Status::invalid_argument("both operands are zero"));
         }
-        Ok(Response::new(AddResponse {
+        let mut resp = Response::new(AddResponse {
             result: inner.a + inner.b,
             source: "backend".into(),
-        }))
+        });
+        // Always set x-backend-version, and echo x-test-id if present.
+        resp.metadata_mut()
+            .insert("x-backend-version", "v1".parse().unwrap());
+        if let Some(id) = test_id {
+            resp.metadata_mut()
+                .insert("x-test-id", id.parse().unwrap());
+        }
+        Ok(resp)
     }
 
     type FibonacciStream = Pin<Box<dyn Stream<Item = Result<FibResponse, Status>> + Send>>;

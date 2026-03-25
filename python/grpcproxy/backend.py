@@ -30,6 +30,13 @@ class MathServiceServicer(math_pb2_grpc.MathServiceServicer):
     async def Add(self, request, context):
         if request.a == 0 and request.b == 0:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "both operands are zero")
+        # Always set x-backend-version as initial metadata,
+        # and echo x-test-id request header back as trailing metadata.
+        md = dict(context.invocation_metadata())
+        initial = [("x-backend-version", "v1")]
+        if "x-test-id" in md:
+            initial.append(("x-test-id", md["x-test-id"]))
+        await context.send_initial_metadata(initial)
         return math_pb2.AddResponse(result=request.a + request.b, source="backend")
 
     async def Fibonacci(self, request, context):
