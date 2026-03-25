@@ -11,6 +11,7 @@ import (
 	grpcproxy "github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // interceptedEchoServer handles EchoService calls locally on the proxy,
@@ -74,15 +75,26 @@ func (s *interceptedEchoServer) BidiStreamEcho(stream grpc.BidiStreamingServer[p
 	}
 }
 
-// StartProxy starts the proxy server. It dials the backend, registers the
-// intercepted EchoService locally, and forwards everything else transparently.
+// StartProxy starts the proxy server. It registers the intercepted EchoService
+// locally and forwards everything else transparently, establishing a new backend
+// connection on demand for each proxied request.
 func StartProxy(listenAddr, backendAddr string) (*grpc.Server, net.Listener, error) {
-	backendConn, err := grpc.NewClient(backendAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, nil, fmt.Errorf("dial backend: %w", err)
+	director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
+
+		conn, err := grpc.NewClient(backendAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, nil, fmt.Errorf("dial backend: %w", err)
+		}
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
+		return outCtx, conn, nil
 	}
 
-	srv := grpc.NewServer(grpcproxy.DefaultProxyOpt(backendConn))
+	srv := grpc.NewServer(grpc.UnknownServiceHandler(grpcproxy.TransparentHandler(director)))
 
 	// Register EchoService locally — these calls are intercepted.
 	// MathService is NOT registered, so it flows through the UnknownServiceHandler to the backend.
