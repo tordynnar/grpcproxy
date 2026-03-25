@@ -21,6 +21,19 @@
 *.swo
 *~
 
+# Python
+python/__pycache__/
+python/**/__pycache__/
+python/*.egg-info/
+python/.pytest_cache/
+python/grpcproxy/generated/*_pb2*.py
+python/grpcproxy/generated/*_grpc.py
+!python/grpcproxy/generated/__init__.py
+
+# Rust
+rust/target/
+rust/Cargo.lock
+
 # OS
 .DS_Store
 Thumbs.db
